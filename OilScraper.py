@@ -1,113 +1,218 @@
 import requests
 from bs4 import BeautifulSoup
+import os
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 
 # GENERAL SETTINGS
 KEYWORDS = ['oil', 'crude', 'brent', 'wti', 'opec']
 MAX_COUNT = 5
 
-websites = ['zerohedge', 'oilprice', 'worldoil', 'theconversation']
-
-# GET HTML FROM WEBSITE
-
 
 def getSoup(url):
+    # GET HTML FROM WEBSITE
     markup = requests.get(url).text
     soup = BeautifulSoup(markup, 'lxml')
     return soup
 
 
-# Cannot make reusable function cross site (easily) as each has different structure of html
-# ZERO HEDGE
-print('ZERO HEDGE')
-url = 'https://www.zerohedge.com'
-soup = getSoup(url)
-
-blocks = soup.find_all('h2', class_='teaser-title')
-i = 0
-for block in blocks:
-    headline = block.find('span').text
-    for word in headline.split(' '):
-        if word.lower() in KEYWORDS:
-            print(headline)
-            i += 1
-            link = block.find('a')
-            print(url+link['href'])
-    if i > MAX_COUNT:
-        break
-
-print(f"{i} articles found")
-print('*' * 20)
-
-# OILPRICE
-print('OILPRICE')
-url = 'https://oilprice.com/'
-soup = getSoup(url)
-
-block = soup.find('a', class_="newsHero__featuredArticle")
-headline = block.find('h2').text
-link = block['href']
-print(headline)
-print(link)
+# Global list to store all collected articles
+articles = []
 
 
-def getHeadlines(className, heading):
-    blocks = soup.find_all('a', class_=className)
+def getZeroHedge():
+    # ZERO HEDGE
+    print('ZERO HEDGE')
+    url = 'https://www.zerohedge.com'
+    soup = getSoup(url)
+
+    blocks = soup.find_all('h2', class_='teaser-title')
     i = 0
     for block in blocks:
-        headline = block.find(heading).text
+        headline = block.find('span').text
         for word in headline.split(' '):
             if word.lower() in KEYWORDS:
+                i += 1
                 print(headline)
-                print(block['href'])
+                link = block.find('a')
+                article = {}
+                article['headline'] = headline
+                article['link'] = url + link['href']
+                article['source'] = '(Zero Hedge)'
+                articles.append(article)
+        if i > MAX_COUNT:
+            break
+
+    print(f"{i} articles found")
+    print('*' * 20)
+
+
+def getOilPrice():
+    # OILPRICE
+    print('OILPRICE')
+    url = 'https://oilprice.com/'
+    soup = getSoup(url)
+
+    block = soup.find('a', class_="newsHero__featuredArticle")
+    headline = block.find('h2').text
+    link = block['href']
+    print(headline)
+    print(link)
+
+    def getHeadlines(className, heading):
+        blocks = soup.find_all('a', class_=className)
+        i = 0
+        for block in blocks:
+            headline = block.find(heading).text
+            for word in headline.split(' '):
+                if word.lower() in KEYWORDS:
+                    print(headline)
+                    article = {}
+                    article['headline'] = headline
+                    article['link'] = block['href']
+                    article['source'] = '(Oil Price)'
+                    articles.append(article)
+                    i += 1
+            if i > MAX_COUNT:
+                break
+        return i
+
+    i = getHeadlines('newsHero__article', 'h2')
+    j = getHeadlines('breakingNewsBlock__article', 'h3')
+
+    print(f"{j + i} articles found")
+    print('*' * 20)
+
+
+def getWorldOilNews():
+    # WORLD OIL NEWS
+    print("WORLD OIL NEWS")
+    url = 'https://www.worldoil.com/news'
+    soup = getSoup(url)
+
+    blocks = soup.find_all('div', class_="article")
+    i = 0
+    for block in blocks:
+        headline = block.find('a')
+        for word in headline.text.split(' '):
+            if word.lower() in KEYWORDS:
+                article = {}
+                print(headline.text)
+                article['headline'] = headline.text
+                article['link'] = 'https://www.worldoil.com/' + \
+                    headline['href']
+                article['source'] = '(World Oil News)'
+                articles.append(article)
                 i += 1
         if i > MAX_COUNT:
             break
-    return i
+
+    print(f"{i} articles found")
+    print('*' * 20)
 
 
-i = getHeadlines('newsHero__article', 'h2')
-j = getHeadlines('breakingNewsBlock__article', 'h3')
+def getConversation():
+    # THE CONVERSATION
+    print('THE CONVERSATION')
+    url = "https://theconversation.com/uk/business"
+    soup = getSoup(url)
 
-print(f"{j + i} articles found")
-print('*' * 20)
+    blocks = soup.find_all(
+        'article', class_={'clearfix', 'placed', 'analysis', 'published'})
+    i = 0
+    for block in blocks:
+        headline = block.find('a')
+        for word in headline.text.strip().split(' '):
+            if word.lower() in KEYWORDS:
+                article = {}
+                print(headline.text)
+                article['headline'] = headline.text
+                article['link'] = 'https://theconversation.com' + \
+                    headline['href']
+                article['source'] = '(The Conversation)'
+                articles.append(article)
+                i += 1
+        if i > MAX_COUNT:
+            break
 
-# WORLD OIL NEWS
-print("WORLD OIL NEWS")
-url = 'https://www.worldoil.com/news'
-soup = getSoup(url)
+    print(f"{i} articles found")
+    print('*' * 20)
 
-blocks = soup.find_all('div', class_="article")
-i = 0
-for block in blocks:
-    headline = block.find('a')
-    for word in headline.text.split(' '):
-        if word.lower() in KEYWORDS:
-            print(headline.text)
-            print('https://www.worldoil.com/' + headline['href'])
-            i += 1
-    if i > MAX_COUNT:
-        break
 
-print(f"{i} articles found")
-print('*' * 20)
+def generateHTML():
+    # Function to transform list of articles into list items within html document
+    content = []
+    for article in articles:
+        bullet = '<li><a href="'
+        bullet += article['link'] + '" target="_blank">' + \
+            article['headline'] + '</a>' + '<p>'+article['source']+'</p></li>'
+        content.append(bullet)
 
-# THE CONVERSATION
-print('THE CONVERSATION')
-url = "https://theconversation.com/uk/business"
-soup = getSoup(url)
+    starting_html = '''
+    <html>
+        <head>
+            <style>
+                body {
+                    font-family: sans-serif;
 
-blocks = soup.find_all(
-    'article', class_={'clearfix', 'placed', 'analysis', 'published'})
-i = 0
-for block in blocks:
-    headline = block.find('a')
-    for word in headline.text.strip().split(' '):
-        if word.lower() in KEYWORDS:
-            print(headline.text)
-            print('https://theconversation.com' + headline['href'])
-            i += 1
-    if i > MAX_COUNT:
-        break
+                }
+                ul {
+                    list-style: none;
+                }
+                p {
+                    display: inline;
+                    margin-left: 20px;
+                }
+                li {
+                    padding-top: 5px;
+                }
+            </style>
+        </head>
+        <body>
+            <h1>News Headlines</h1>
+            <ul>
+                $LIST
+            </ul>
+        </body>
+    </html>
+    '''
+    html = starting_html.replace('$LIST', ('').join(content))
+    return html
 
-print(f"{i} articles found")
-print('*' * 20)
+
+def testHTML(html):
+    # Save to sample html for testing
+    with open('sample.html', 'w') as f:
+        print(html, file=f)
+
+
+def sendMail(html):
+    # EMAIL
+    EMAIL = os.environ.get('MAIL_USER')
+    PASSWORD = os.environ.get('MAIL_PASSWORD')
+
+    with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
+        smtp.login(EMAIL, PASSWORD)
+        msg = MIMEMultipart('alternative')
+        msg['Subject'] = "Oil News Headlines"
+        msg['From'] = EMAIL
+        msg['To'] = "sen.sayanan@gmail.com"
+        plain = "Here are some headlines"
+        part1 = MIMEText(plain, 'plain')
+        part2 = MIMEText(html, 'html')
+        msg.attach(part1)
+        msg.attach(part2)
+        smtp.send_message(msg)
+        print('Mail sent')
+
+
+if __name__ == '__main__':
+    getZeroHedge()
+    getOilPrice()
+    getWorldOilNews()
+    getConversation()
+    print(f"Total articles found: {len(articles)}")
+    html = generateHTML()
+    testHTML(html)
+    # sendMail(html)
