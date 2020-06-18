@@ -4,10 +4,25 @@ import os
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+import json
 
 # GENERAL SETTINGS
 KEYWORDS = ['oil', 'crude', 'brent', 'wti', 'opec']
 MAX_COUNT = 5
+
+# Global list to store all collected articles
+articles = []
+
+# Load config variables
+EMAIL = ""
+PASSWORD = ""
+RECIPIENTS = []
+
+with open('config.json', 'r') as f:
+    config = json.load(f)
+    EMAIL = config['email']
+    PASSWORD = config['password']
+    RECIPIENTS = config['recipients']
 
 
 def getSoup(url):
@@ -15,10 +30,6 @@ def getSoup(url):
     markup = requests.get(url).text
     soup = BeautifulSoup(markup, 'lxml')
     return soup
-
-
-# Global list to store all collected articles
-articles = []
 
 
 def getZeroHedge():
@@ -41,7 +52,7 @@ def getZeroHedge():
                 article['link'] = url + link['href']
                 article['source'] = '(Zero Hedge)'
                 articles.append(article)
-        if i > MAX_COUNT:
+        if i >= MAX_COUNT:
             break
 
     print(f"{i} articles found")
@@ -74,7 +85,7 @@ def getOilPrice():
                     article['source'] = '(Oil Price)'
                     articles.append(article)
                     i += 1
-            if i > MAX_COUNT:
+            if i >= MAX_COUNT:
                 break
         return i
 
@@ -105,7 +116,7 @@ def getWorldOilNews():
                 article['source'] = '(World Oil News)'
                 articles.append(article)
                 i += 1
-        if i > MAX_COUNT:
+        if i >= MAX_COUNT:
             break
 
     print(f"{i} articles found")
@@ -133,7 +144,7 @@ def getConversation():
                 article['source'] = '(The Conversation)'
                 articles.append(article)
                 i += 1
-        if i > MAX_COUNT:
+        if i >= MAX_COUNT:
             break
 
     print(f"{i} articles found")
@@ -159,6 +170,10 @@ def generateHTML():
                 }
                 ul {
                     list-style: none;
+                    width: 100%;
+                }
+                li {
+                    width: 100%;
                 }
                 p {
                     display: inline;
@@ -185,19 +200,18 @@ def testHTML(html):
     # Save to sample html for testing
     with open('sample.html', 'w') as f:
         print(html, file=f)
+        print('HTML generated')
 
 
 def sendMail(html):
     # EMAIL
-    EMAIL = os.environ.get('MAIL_USER')
-    PASSWORD = os.environ.get('MAIL_PASSWORD')
 
     with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
         smtp.login(EMAIL, PASSWORD)
         msg = MIMEMultipart('alternative')
         msg['Subject'] = "Oil News Headlines"
         msg['From'] = EMAIL
-        msg['To'] = "sen.sayanan@gmail.com"
+        msg['To'] = ", ".join(RECIPIENTS)
         plain = "Here are some headlines"
         part1 = MIMEText(plain, 'plain')
         part2 = MIMEText(html, 'html')
@@ -213,6 +227,9 @@ if __name__ == '__main__':
     getWorldOilNews()
     getConversation()
     print(f"Total articles found: {len(articles)}")
+
     html = generateHTML()
-    testHTML(html)
-    # sendMail(html)
+
+    # Uncomment below for debug of email template
+    # testHTML(html)
+    sendMail(html)
